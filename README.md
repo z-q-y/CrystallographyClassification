@@ -8,3 +8,4 @@ The contents of this repo require a private Julia module, `AtomicGraphNets.jl` t
 
 `AtomicGraphNets.jl` and `ChemistryFeaturization.jl` are component packages of the ARPA-E project.
 
+Please run the Julia files using their eponymous Slurm batch scripts, so as not to take up precious computing resources on your head node.
