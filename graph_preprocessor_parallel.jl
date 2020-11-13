@@ -47,13 +47,9 @@ labels = labels[labels[:crystalsystem] .∈ Ref(label_names), :]
 
 cif_roots = string.(labels[:, 1])
 
-@everywhere function build_graphs_from_cif_list(cif_list::Vector{String}, output_folder::String, 
-        use_voronoi=false, radius=8.0, max_num_nbr=12, 
-        dist_decay_func=inverse_square, normalize=true)
-    
-    cif_dir = "../cif/"
+@everywhere function build_graphs_from_cif_list(cif_list::Vector{String}, output_folder::String)
     len_cif_list = length(cif_list)
-    cifs_without_graphs = SharedArray{Int64}(length(cif_list))
+    cifs_without_graphs = SharedArray{Int64}(len_cif_list)
     features  = Symbol.(["Group", "Row", "Block", "Atomic mass", "Atomic radius", "X"])
     nbins     = [18, 9, 4, 16, 10, 10]
     logspaced = [false, false, false, true, true, false]
@@ -66,9 +62,13 @@ cif_roots = string.(labels[:, 1])
         @info "Output path provided did not exist, creating folder there."
     end
 
-    # cifs_without_graphs = pmap((a)->cif_reader(a), cif_roots)
-    @sync @distributed for idx in 1:len_cif_list
-        cif = cif_list[idx]
+    @everywhere function cif_reader!(cif::String, idx::Int, 
+            cifs_without_graphs, output_folder, atom_featurevecs, 
+            featurization, len_cif_list; 
+            use_voronoi=false, radius=8.0, max_num_nbr=12, 
+            dist_decay_func=inverse_square, normalize=true)
+        
+        cif_dir = "../cif/"
         cif_path = string(cif_dir, cif[1], "/", cif[2:3], "/", 
                       cif[4:5], "/", cif, ".cif")
 
@@ -89,11 +89,13 @@ cif_roots = string.(labels[:, 1])
         end
     end
     
+    pmap((a, b)->cif_reader!(a, b, cifs_without_graphs, output_folder, atom_featurevecs, featurization, len_cif_list),
+        cif_roots, collect(1:len_cif_list), retry_delays=zeros(NUMPROCS))
+    
     return cifs_without_graphs
 end
 
 cifs_without_graphs = build_graphs_from_cif_list(cif_roots, output_folder)
-println(cifs_without_graphs)
 
 # Record cifs where graph building failed
 writedlm("../newgraphs/cifs_without_graphs$datasize.csv", cifs_without_graphs)

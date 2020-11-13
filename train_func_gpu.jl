@@ -8,7 +8,7 @@ using SparseArrays
 using Random, Statistics
 using Flux
 using Flux: @epochs
-# using GeometricFlux
+using CuArrays
 using SimpleWeightedGraphs
 using AtomicGraphNets
 using DelimitedFiles
@@ -44,10 +44,9 @@ Base.promote_rule(::Type{Float64}, ::Type{Float32}) = Float32
 #     _small: ~3500
 #     _mid:   ~9000
 #     _large: ~20000
-#     _long:  ~80000
-#     _half:  ~200000
+#     _long:  ~50000
 #     _all:   ~400000
-datasize = "_long";
+datasize = "_mid";
 
 # Hyperparameters
 const train_frac = 0.8
@@ -58,7 +57,7 @@ decay_fcn=inverse_square
 
 prop = "crystalsystem"
 cif_dir = "../cif/"
-graph_dir = "../newgraphs/_all/"  # Change back to $datasize after done
+graph_dir = "../newgraphs/$datasize/"
 
 num_conv = 3
 atom_fea_len = 32
@@ -73,7 +72,7 @@ features = ["Group", "Row", "X", "Atomic radius", "Block"]
 num_bins = [18, 8, 10, 10, 4]
 logspaced = [false, false, false, true, false]
 
-cifs_without_graphs = readdlm("../newgraphs/cifs_without_graphs_all.csv", ',', Int32);
+cifs_without_graphs = readdlm("../graphs/cifs_without_graphs$datasize.csv", ',', Int32);
 labels = CSV.File("../labels/example$datasize.txt", delim=", ") |> DataFrame;
 
 # Remove cifs with corrupted or out-of-scope labels
@@ -117,10 +116,6 @@ num_features = size(inputs[1].features)[1]
 num_pts = size(labels)[1] # 500
 num_train = Int32(round(train_frac * num_pts))
 num_test = num_pts - num_train
-println("num_pts:", num_pts)
-println("num_train:", num_train)
-println("num_test:", num_test)
-
 
 # Sample from y
 indices = shuffle(1:size(labels,1))[1:num_pts]
@@ -133,10 +128,10 @@ ycat_len = length(ycat)
 output = Flux.onehotbatch(ysample, ycat)
 output = [output[:, i] for i in 1:size(output, 2)]
 
-train_output = output[1:num_train, :];
-test_output  = output[num_train+1:end, :];
-train_input  = input[1:num_train];
-test_input   = input[num_train+1:end];
+train_output = output[1:num_train, :] |> gpu;
+test_output  = output[num_train+1:end, :] |> gpu;
+train_input  = input[1:num_train] |> gpu;
+test_input   = input[num_train+1:end] |> gpu;
 train_y      = ysample[1:num_train];
 test_y       = ysample[num_train+1:end];
 train_cifs   = cif_roots_sample[1:num_train];
@@ -148,7 +143,7 @@ model = Chain(AGNConv(num_features=>atom_fea_len),
               [AGNConv(atom_fea_len=>atom_fea_len) for i in 1:num_conv-1]..., 
               AGNMeanPool(crys_fea_len, 0.1), 
               [Dense(crys_fea_len, crys_fea_len, softplus) for i in 1:num_hidden_layers-1]...,
-              Dense(crys_fea_len, ycat_len), softmax);
+              Dense(crys_fea_len, ycat_len), softmax) |> gpu;
 
 #= 
 # Max pool
